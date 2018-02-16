@@ -1,23 +1,27 @@
 %{
-	#include "y.tab.h"
+#include <stdlib.h>
+#include "new.h"
+#include "y.tab.h"
+void yyerror(char *);
 %}
+
 %%
-"if" 	return IF;
-"while"	return WHILE;
-"return" {return RETURN;}
-"+"	return PLUS;
-"*"	return STAR;
-"<"	return LT;
-"=="	return EE;
-"="	return *yytext;
-[\[\]]	return *yytext;
-[\n\t ]	;
-[=;]	return *yytext;
-[0-9]+ 	{yylval.val=atoi(yytext);return VALUE;}
-[A-Za-z]+	{yylval.id=yytext[0];return SYMBOL;}
-.	{yyerror("Unexpected Character");}
+
+"=="            return EE;
+"while"         return WHILE;
+"if"            return IF;
+"return"         return RETURN;
+exit			exit(EXIT_SUCCESS);
+[a-zA-Z]+ { yylval.sIndex = *yytext - 'a'; return VARIABLE;}
+
+[0-9]+ { yylval.number = atoi(yytext); return INTEGER; }
+
+[<=+*;\[\]] { return *yytext; }
+
+[ \t\n]+        ;       /* ignore whitespace */
+
+.               yyerror("Unknown character");
 %%
-int yywrap(void)
-{
-	return 1;
+int yywrap(void) {
+    return 1;
 }

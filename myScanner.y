@@ -1,61 +1,120 @@
 %{
 //------------C declarations-----------
 	void yyerror(char *s);
+	#include "new.h"
 	#include <stdio.h>
-	#include <stdlib.h>
+#include <stdlib.h>
+#include <stdarg.h>
 	int nameToVal(char x);
 	void updateVal(char c,int v);
 	int symbols[26];
 	extern int yylineno;
 	extern char *yytext;
 	int yylex();
+
+	nodeType *opr(int oper, int nops, ...);
+	nodeType *id(int i);
+	nodeType *con(int value);
+	void freeNode(nodeType *p);
+	int ex(nodeType *p);
 %}
 //-----------YACC Definitions----------
+%union {
+    int number;                 /* integer value */
+    char sIndex;                /* symbol table index */
+    nodeType *nPtr;             /* node pointer */
+};
 
-%union {int val;char id;}
-%start prog
-%token IF WHILE RETURN STAR PLUS LT EE VALUE SYMBOL
-%type <val> VALUE expr prog
-%type <id> SYMBOL
+%token <number> INTEGER
+%token <sIndex> VARIABLE
+%token WHILE IF RETURN PRINT EE
+
+%type <nPtr> prog expr
 
 %%
-//---------------------------Production Rules----------------------------------------
-prog	: '[' '=' SYMBOL expr ']'		{updateVal($3,$4);}
-		| '[' ';' prog prog ']'			{;}
-		| '[' IF expr prog prog ']'		{if($3){$4;}else{$5;}}
-		| '[' WHILE expr prog ']'		{while($3){$4;}}
-		| '[' RETURN expr ']'			{printf("Returned %d\n",$3);}
-		;
 
-expr	: '[' PLUS expr expr ']'			{$$=$3+$4;printf("%d\n",$$);}
-		| '[' STAR expr expr ']'			{$$=$3*$4;}
-		| '[' EE expr expr ']'	{$$=($3==$4);}
-		| '[' LT expr expr ']'  {$$=($3<$4);}
-		| SYMBOL						{$$=nameToVal($1);}
-		| VALUE							{$$=$1;}
-		;
+start:
+        prog    { ex($1); freeNode($1); } start
+        | expr            { printf("%d\n\n", ex($1)); } start
+        | /* NULL */
+        ;
+
+prog:
+         '[' ';' prog prog ']'          { $$ = opr(';', 2, $3, $4); }
+        | '[' RETURN expr ']'                 { $$ = opr(PRINT, 1, $3); }
+        | '[' '=' VARIABLE expr ']'          { $$ = opr('=', 2, id($3), $4); }
+        | '[' WHILE expr prog ']'        { $$ = opr(WHILE, 2, $3, $4); }
+        | '[' IF expr prog prog ']' { $$ = opr(IF, 3, $3, $4, $5); }
+        ;
+
+expr:
+        INTEGER               { $$ = con($1); }
+        | VARIABLE              { $$ = id($1); }
+        | '[' '+' expr expr ']'         { $$ = opr('+', 2, $3, $4); }
+        | '[' '*' expr expr ']'         { $$ = opr('*', 2, $3, $4); }
+        | '[' '<' expr expr ']'        { $$ = opr('<', 2, $3, $4); }
+        | '[' EE expr expr ']'        { $$ = opr(EE, 2, $3, $4); }
+        ;
+
 %%
 
-//-----------------C Code-------------
+nodeType *con(int value) {
+    nodeType *p;
 
-void updateVal(char c,int v)
-{
-	symbols[c-'a']=v;
-}
-int nameToVal(char c)
-{
-	return symbols[c-'a'];
-}
+    if ((p = malloc(sizeof(nodeType))) == NULL)
+        yyerror("out of memory");
+    p->type = typeCon;
+    p->con.value = value;
 
-int main(void)
-{
-	int i;
-	for(i=0;i<26;i++)
-		symbols[i]=0;
-	return yyparse();
+    return p;
 }
 
-void yyerror(char *s)
-{
-	fprintf(stderr,"%s at line %d, text: %s\n",s,yylineno,yytext);
+nodeType *id(int i) {
+    nodeType *p;
+    if ((p = malloc(sizeof(nodeType))) == NULL)
+        yyerror("out of memory");
+    p->type = typeId;
+    p->id.i = i;
+
+    return p;
+}
+
+nodeType *opr(int oper, int nops, ...) {
+    va_list ap;
+    nodeType *p;
+    int i;
+
+    if ((p = malloc(sizeof(nodeType) + (nops-1) * sizeof(nodeType *))) == NULL)
+        yyerror("out of memory");
+
+    p->type = typeOpr;
+    p->opr.oper = oper;
+    p->opr.nops = nops;
+    va_start(ap, nops);
+    for (i = 0; i < nops; i++)
+        p->opr.op[i] = va_arg(ap, nodeType*);
+    va_end(ap);
+    return p;
+}
+
+void freeNode(nodeType *p) {
+    int i;
+
+    if (!p) return;
+    if (p->type == typeOpr) {
+        for (i = 0; i < p->opr.nops; i++)
+            freeNode(p->opr.op[i]);
+    }
+    free (p);
+}
+
+void yyerror(char *s) {
+    extern char* yytext;
+    extern int yylineno;
+    fprintf(stdout, "%s\nLine No: %d\nAt char: %c\n", s, yylineno,*yytext);
+}
+
+int main(void) {
+    yyparse();
+    return 0;
 }
